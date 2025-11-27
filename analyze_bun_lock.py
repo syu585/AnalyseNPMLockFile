@@ -10,6 +10,7 @@ import json
 import re
 import requests
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Dict, List, Tuple
 from urllib.parse import quote
@@ -68,16 +69,17 @@ def parse_bun_lock(lock_file_path: str) -> List[Tuple[str, str]]:
     return packages
 
 
-def get_package_release_date(package_name: str, version: str) -> str:
+def get_package_release_date(package_name: str, version: str, verbose: bool = False) -> Dict:
     """
     Query npm registry API to get the release date for a specific package version.
     
     Args:
         package_name: Name of the npm package
         version: Version of the package
+        verbose: Whether to print progress messages
         
     Returns:
-        Release date as ISO 8601 string, or "Unknown" if not found
+        Dictionary with package info including release date
     """
     try:
         # Encode package name for URL (important for scoped packages)
@@ -91,16 +93,84 @@ def get_package_release_date(package_name: str, version: str) -> str:
         
         # Get the time information for the specific version
         if 'time' in data and version in data['time']:
-            return data['time'][version]
+            release_date = data['time'][version]
         else:
-            return "Unknown"
+            release_date = "Unknown"
+        
+        if verbose:
+            print(f"✓ {package_name}@{version}", file=sys.stderr)
+            
+        return {
+            'package': package_name,
+            'version': version,
+            'release_date': release_date
+        }
             
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching data for {package_name}@{version}: {e}", file=sys.stderr)
-        return "Error"
+        if verbose:
+            print(f"✗ {package_name}@{version}: {e}", file=sys.stderr)
+        return {
+            'package': package_name,
+            'version': version,
+            'release_date': "Error"
+        }
     except Exception as e:
-        print(f"Unexpected error for {package_name}@{version}: {e}", file=sys.stderr)
-        return "Error"
+        if verbose:
+            print(f"✗ {package_name}@{version}: {e}", file=sys.stderr)
+        return {
+            'package': package_name,
+            'version': version,
+            'release_date': "Error"
+        }
+
+
+def fetch_release_dates_concurrent(packages: List[Tuple[str, str]], max_workers: int = 10, verbose: bool = False) -> List[Dict]:
+    """
+    Fetch release dates for multiple packages concurrently.
+    
+    Args:
+        packages: List of (package_name, version) tuples
+        max_workers: Maximum number of concurrent workers (default: 10)
+        verbose: Whether to print progress messages
+        
+    Returns:
+        List of package dictionaries with release dates
+    """
+    packages_with_dates = []
+    
+    if verbose:
+        print(f"Fetching release dates for {len(packages)} packages using {max_workers} concurrent workers...", file=sys.stderr)
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_package = {
+            executor.submit(get_package_release_date, pkg_name, version, verbose): (pkg_name, version)
+            for pkg_name, version in packages
+        }
+        
+        # Collect results as they complete
+        completed = 0
+        for future in as_completed(future_to_package):
+            completed += 1
+            try:
+                result = future.result()
+                packages_with_dates.append(result)
+                
+                if verbose and completed % 10 == 0:
+                    print(f"Progress: {completed}/{len(packages)} packages fetched", file=sys.stderr)
+            except Exception as e:
+                pkg_name, version = future_to_package[future]
+                print(f"Error processing {pkg_name}@{version}: {e}", file=sys.stderr)
+                packages_with_dates.append({
+                    'package': pkg_name,
+                    'version': version,
+                    'release_date': "Error"
+                })
+    
+    if verbose:
+        print(f"Completed fetching all {len(packages)} packages", file=sys.stderr)
+    
+    return packages_with_dates
 
 
 def filter_packages_after_date(packages_with_dates: List[Dict], cutoff_date: str) -> List[Dict]:
@@ -168,6 +238,12 @@ def main():
         action='store_true',
         help='Show progress messages'
     )
+    parser.add_argument(
+        '--workers',
+        type=int,
+        default=10,
+        help='Number of concurrent workers for fetching package data (default: 10)'
+    )
     
     args = parser.parse_args()
     
@@ -180,20 +256,12 @@ def main():
     if args.verbose:
         print(f"Found {len(packages)} packages", file=sys.stderr)
     
-    # Get release dates for all packages
-    packages_with_dates = []
-    
-    for i, (package_name, version) in enumerate(packages, 1):
-        if args.verbose:
-            print(f"Fetching release date for {package_name}@{version} ({i}/{len(packages)})...", file=sys.stderr)
-        
-        release_date = get_package_release_date(package_name, version)
-        
-        packages_with_dates.append({
-            'package': package_name,
-            'version': version,
-            'release_date': release_date
-        })
+    # Get release dates for all packages concurrently
+    packages_with_dates = fetch_release_dates_concurrent(
+        packages, 
+        max_workers=args.workers, 
+        verbose=args.verbose
+    )
     
     # Filter packages by date
     if args.verbose:
