@@ -181,17 +181,18 @@ def parse_yarn_lock(lock_file_path: str) -> List[Tuple[str, str]]:
     # Yarn lock format uses patterns like:
     # package-name@^1.0.0:
     #   version "1.0.0"
-    
-    # Match package declarations
-    package_pattern = re.compile(r'^"?([^"\s@][^"@]*?)@[^:]+:\s*$', re.MULTILINE)
-    version_pattern = re.compile(r'^\s+version\s+"([^"]+)"', re.MULTILINE)
+    # or for scoped packages:
+    # "@scope/package@^1.0.0":
+    #   version "1.0.0"
     
     lines = content.split('\n')
     current_package = None
     
     for i, line in enumerate(lines):
         # Check for package name
-        pkg_match = re.match(r'^"?([^"\s@][^"@]*?)@[^:]+:\s*$', line)
+        # Match both regular and scoped packages
+        # Pattern: "package@version:" or package@version: or "@scope/package@version:"
+        pkg_match = re.match(r'^"?(@?[^"\s][^"]*?)@[^:]+:\s*$', line)
         if pkg_match:
             current_package = pkg_match.group(1)
             # Remove quotes if present

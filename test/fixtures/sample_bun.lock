@@ -1,0 +1,10 @@
+{
+  "lockfileVersion": 0,
+  "workspaces": {},
+  "packages": {
+    "react": ["react@18.2.0"],
+    "@babel/core": ["@babel/core@7.27.4"],
+    "lodash": ["lodash@4.17.21"]
+  }
+}
+

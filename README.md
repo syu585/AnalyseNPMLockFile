@@ -194,3 +194,33 @@ This script queries the npm registry API using concurrent requests for faster pe
 - If there's an error fetching data, the release_date will be marked as "Error"
 - Packages with "Unknown" or "Error" dates are excluded from the filtered results
 
+## Testing
+
+The project includes a comprehensive test suite covering all functions.
+
+### Running Tests
+
+```bash
+# Install dependencies first
+pip install -r requirements.txt
+
+# Run all tests
+python3 test/run_tests.py
+
+# Or use unittest directly
+python3 -m unittest discover test -v
+
+# Run specific test file
+python3 -m unittest test.test_parsers -v
+python3 -m unittest test.test_api_and_filters -v
+```
+
+### Test Coverage
+
+The test suite includes:
+- **Parser Tests** (`test_parsers.py`): Tests for all lock file format parsers
+- **API & Filter Tests** (`test_api_and_filters.py`): Tests for npm registry API calls and date filtering
+- **Sample Fixtures** (`test/fixtures/`): Sample lock files for each supported format
+
+See `test/README.md` for detailed testing documentation.
+

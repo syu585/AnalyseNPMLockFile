@@ -1,0 +1,24 @@
+{
+  "name": "test-project",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "test-project",
+      "version": "1.0.0"
+    },
+    "node_modules/react": {
+      "version": "18.2.0",
+      "resolved": "https://registry.npmjs.org/react/-/react-18.2.0.tgz"
+    },
+    "node_modules/@babel/core": {
+      "version": "7.27.4",
+      "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.27.4.tgz"
+    },
+    "node_modules/lodash": {
+      "version": "4.17.21",
+      "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"
+    }
+  }
+}
+
