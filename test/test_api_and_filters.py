@@ -115,6 +115,70 @@ class TestGetPackageReleaseDate(unittest.TestCase):
             result = get_package_release_date('react', '18.2.0', verbose=True)
         
         self.assertEqual(result['release_date'], '2022-06-14T15:30:00.000Z')
+    
+    @patch('analyze_bun_lock.requests.get')
+    def test_get_package_release_date_http_404(self, mock_get):
+        """Test handling 404 errors for non-existent packages."""
+        import requests
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError()
+        mock_get.return_value = mock_response
+        
+        result = get_package_release_date('nonexistent-package', '1.0.0')
+        
+        self.assertEqual(result['release_date'], 'Error')
+    
+    @patch('analyze_bun_lock.requests.get')
+    def test_get_package_release_date_http_500(self, mock_get):
+        """Test handling server errors."""
+        import requests
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError()
+        mock_get.return_value = mock_response
+        
+        result = get_package_release_date('react', '18.2.0')
+        
+        self.assertEqual(result['release_date'], 'Error')
+    
+    @patch('analyze_bun_lock.requests.get')
+    def test_get_package_release_date_connection_error(self, mock_get):
+        """Test handling connection errors."""
+        import requests
+        mock_get.side_effect = requests.exceptions.ConnectionError()
+        
+        result = get_package_release_date('react', '18.2.0')
+        
+        self.assertEqual(result['release_date'], 'Error')
+    
+    @patch('analyze_bun_lock.requests.get')
+    def test_get_package_release_date_json_decode_error(self, mock_get):
+        """Test handling invalid JSON responses."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError('Invalid JSON')
+        mock_get.return_value = mock_response
+        
+        result = get_package_release_date('react', '18.2.0')
+        
+        self.assertEqual(result['release_date'], 'Error')
+    
+    @patch('analyze_bun_lock.requests.get')
+    def test_get_package_release_date_missing_time_field(self, mock_get):
+        """Test handling responses without time field."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'name': 'react',
+            'versions': {'18.2.0': {}}
+            # Missing 'time' field
+        }
+        mock_get.return_value = mock_response
+        
+        result = get_package_release_date('react', '18.2.0')
+        
+        self.assertEqual(result['release_date'], 'Unknown')
 
 
 class TestFetchReleaseDatesConcurrent(unittest.TestCase):
@@ -172,8 +236,17 @@ class TestFetchReleaseDatesConcurrent(unittest.TestCase):
         # Should handle the error and continue with other packages
         results = fetch_release_dates_concurrent(packages, max_workers=2, verbose=False)
         
-        # At least 2 packages should succeed
-        self.assertGreaterEqual(len(results), 2)
+        # All 3 packages should be in results (including the failing one)
+        self.assertEqual(len(results), 3)
+        
+        # Verify the failing package has Error status
+        error_pkg = next((p for p in results if p['package'] == 'failing-package'), None)
+        self.assertIsNotNone(error_pkg)
+        self.assertEqual(error_pkg['release_date'], 'Error')
+        
+        # Verify successful packages
+        successful_pkgs = [p for p in results if p['release_date'] != 'Error']
+        self.assertEqual(len(successful_pkgs), 2)
 
 
 class TestFilterPackagesAfterDate(unittest.TestCase):
@@ -251,8 +324,8 @@ class TestFilterPackagesAfterDate(unittest.TestCase):
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]['package'], 'react')
     
-    def test_filter_packages_after_date_exact_cutoff(self):
-        """Test filtering at exact cutoff date (should exclude)."""
+    def test_filter_packages_after_date_excludes_exact_cutoff(self):
+        """Test that packages released exactly at cutoff date are excluded (uses > not >=)."""
         packages = [
             {
                 'package': 'react',
@@ -266,6 +339,23 @@ class TestFilterPackagesAfterDate(unittest.TestCase):
         
         # Package released exactly at cutoff should not be included (> not >=)
         self.assertEqual(len(filtered), 0)
+    
+    def test_filter_packages_after_date_includes_one_second_after(self):
+        """Test that packages released one second after cutoff are included."""
+        packages = [
+            {
+                'package': 'react',
+                'version': '18.2.0',
+                'release_date': '2024-01-01T00:00:01.000Z'  # 1 second after cutoff
+            }
+        ]
+        
+        cutoff_date = '2024-01-01T00:00:00.000Z'
+        filtered = filter_packages_after_date(packages, cutoff_date)
+        
+        # Package released 1 second after cutoff should be included
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]['package'], 'react')
     
     def test_filter_packages_after_date_invalid_date(self):
         """Test handling of invalid cutoff date."""
@@ -353,6 +443,109 @@ class TestFilterPackagesAfterDate(unittest.TestCase):
         filtered = filter_packages_after_date(packages, cutoff_date)
         
         self.assertEqual(len(filtered), 2)
+    
+    def test_filter_packages_after_date_malformed_package_dict(self):
+        """Test handling of packages with missing fields.
+        
+        Note: The current implementation expects all packages to have 'release_date' field.
+        This test verifies that behavior and documents that malformed packages will raise KeyError.
+        """
+        packages = [
+            {
+                'package': 'react',
+                'version': '18.2.0',
+                'release_date': '2024-06-15T10:30:00.000Z'
+            },
+            {
+                'package': 'broken-pkg',
+                # Missing version field
+                'release_date': '2024-07-01T00:00:00.000Z'
+            },
+            {
+                'version': '1.0.0',
+                # Missing package field
+                'release_date': '2024-08-01T00:00:00.000Z'
+            },
+            {
+                'package': 'no-date-pkg',
+                'version': '2.0.0'
+                # Missing release_date field - this will cause KeyError
+            }
+        ]
+        
+        cutoff_date = '2024-01-01'
+        
+        # The current implementation doesn't handle missing 'release_date' gracefully
+        # It will raise KeyError when accessing pkg['release_date']
+        with self.assertRaises(KeyError):
+            filtered = filter_packages_after_date(packages, cutoff_date)
+    
+    def test_filter_packages_after_date_empty_string_values(self):
+        """Test handling of packages with empty string values.
+        
+        Note: The implementation checks if release_date is 'Unknown' or 'Error',
+        but empty string '' does not match either, so it tries to parse it as a date.
+        Empty strings cause ValueError which is caught and the package is skipped.
+        """
+        packages = [
+            {
+                'package': 'react',
+                'version': '18.2.0',
+                'release_date': '2024-06-15T10:30:00.000Z'
+            },
+            {
+                'package': 'empty-package',
+                'version': '1.0.0',
+                'release_date': ''  # Empty string will cause ValueError, package skipped
+            },
+            {
+                'package': 'empty-version',
+                'version': '',
+                'release_date': '2024-08-01T00:00:00.000Z'
+            },
+            {
+                'package': 'empty-date',
+                'version': '2.0.0',
+                'release_date': ''  # Empty string will cause ValueError, package skipped
+            }
+        ]
+        
+        cutoff_date = '2024-01-01'
+        filtered = filter_packages_after_date(packages, cutoff_date)
+        
+        # Implementation silently skips packages with empty or invalid date strings (catches ValueError)
+        # So we should get 2 packages: react and empty-version (which has valid date but empty version)
+        self.assertEqual(len(filtered), 2)
+        package_names = [pkg['package'] for pkg in filtered]
+        self.assertIn('react', package_names)
+        self.assertIn('empty-version', package_names)
+    
+    def test_filter_packages_after_date_invalid_release_date_format(self):
+        """Test handling of packages with invalid date formats."""
+        packages = [
+            {
+                'package': 'react',
+                'version': '18.2.0',
+                'release_date': '2024-06-15T10:30:00.000Z'
+            },
+            {
+                'package': 'invalid-date',
+                'version': '1.0.0',
+                'release_date': 'not-a-date'
+            },
+            {
+                'package': 'partial-date',
+                'version': '2.0.0',
+                'release_date': '2024-13-45'  # Invalid month/day
+            }
+        ]
+        
+        cutoff_date = '2024-01-01'
+        filtered = filter_packages_after_date(packages, cutoff_date)
+        
+        # Only the valid package should be included
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]['package'], 'react')
 
 
 if __name__ == '__main__':

@@ -124,6 +124,18 @@ class TestParseBunLock(unittest.TestCase):
             for pkg_name, version in packages:
                 self.assertIsInstance(pkg_name, str)
                 self.assertIsInstance(version, str)
+            
+            # Verify specific packages from sample_bun.lock fixture
+            package_dict = {pkg[0]: pkg[1] for pkg in packages}
+            self.assertIn('react', package_dict)
+            self.assertEqual(package_dict['react'], '18.2.0')
+            self.assertIn('@babel/core', package_dict)
+            self.assertEqual(package_dict['@babel/core'], '7.27.4')
+            self.assertIn('lodash', package_dict)
+            self.assertEqual(package_dict['lodash'], '4.17.21')
+            
+            # Verify we have exactly 3 packages from the fixture
+            self.assertEqual(len(packages), 3)
     
     def test_parse_bun_lock_scoped_package(self):
         """Test parsing scoped packages in bun.lock."""
@@ -160,6 +172,47 @@ class TestParseBunLock(unittest.TestCase):
             packages = parse_bun_lock(temp_path)
             self.assertEqual(len(packages), 1)
             self.assertEqual(packages[0], ('react', '18.2.0'))
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_bun_lock_empty_packages(self):
+        """Test parsing bun.lock with empty packages section."""
+        bun_data = {
+            "packages": {}
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.lock', delete=False) as f:
+            json.dump(bun_data, f)
+            temp_path = f.name
+        
+        try:
+            packages = parse_bun_lock(temp_path)
+            self.assertEqual(len(packages), 0)
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_bun_lock_multiple_versions(self):
+        """Test parsing bun.lock with multiple package versions."""
+        bun_data = {
+            "packages": {
+                "react": ["react@18.2.0"],
+                "react-dom": ["react-dom@18.2.0"],
+                "@types/react": ["@types/react@18.0.0"]
+            }
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.lock', delete=False) as f:
+            json.dump(bun_data, f)
+            temp_path = f.name
+        
+        try:
+            packages = parse_bun_lock(temp_path)
+            self.assertEqual(len(packages), 3)
+            
+            package_names = [pkg[0] for pkg in packages]
+            self.assertIn('react', package_names)
+            self.assertIn('react-dom', package_names)
+            self.assertIn('@types/react', package_names)
         finally:
             os.unlink(temp_path)
 
@@ -226,6 +279,50 @@ class TestParseNpmLock(unittest.TestCase):
             package_dict = {pkg[0]: pkg[1] for pkg in packages}
             self.assertEqual(package_dict['react'], '18.2.0')
             self.assertEqual(package_dict['@babel/core'], '7.27.4')
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_npm_lock_empty_packages(self):
+        """Test parsing npm lock with empty packages section."""
+        npm_data = {
+            "lockfileVersion": 3,
+            "packages": {}
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(npm_data, f)
+            temp_path = f.name
+        
+        try:
+            packages = parse_npm_lock(temp_path)
+            self.assertEqual(len(packages), 0)
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_npm_lock_skip_root_package(self):
+        """Test that root package (empty path) is skipped."""
+        npm_data = {
+            "lockfileVersion": 3,
+            "packages": {
+                "": {
+                    "name": "my-project",
+                    "version": "1.0.0"
+                },
+                "node_modules/react": {
+                    "version": "18.2.0"
+                }
+            }
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(npm_data, f)
+            temp_path = f.name
+        
+        try:
+            packages = parse_npm_lock(temp_path)
+            # Should only include react, not the root package
+            self.assertEqual(len(packages), 1)
+            self.assertEqual(packages[0][0], 'react')
         finally:
             os.unlink(temp_path)
 
