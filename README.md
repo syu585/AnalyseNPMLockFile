@@ -2,6 +2,15 @@
 
 A Python script to analyze lock files from various package managers and find packages released after a specific date.
 
+
+`Sha1-Hulud`及び他のマルウェアを対応する際に，感染されたpackageリストができた前やコードレベルのチェッカーがある前に，既存のlockファイルを分析し，リリースの時期による判断はできると思います。
+
+全ての関連パッケージは明らかに対象マルウェアが流行っている前にリリースされたら危険性が低いと判断できます。
+
+新規に依頼をインストール・アップデートするのではなく，lockファイル経由で安全なバージョンをインストールすることである程度業務を進めると思います。
+
+もちろん，長期的に潜伏するやつもあるので万全とは言えません。
+
 ## Supported Lock File Formats
 
 - **Bun** (`bun.lock`)
@@ -206,13 +215,6 @@ pip install -r requirements.txt
 
 # Run all tests
 python3 test/run_tests.py
-
-# Or use unittest directly
-python3 -m unittest discover test -v
-
-# Run specific test file
-python3 -m unittest test.test_parsers -v
-python3 -m unittest test.test_api_and_filters -v
 ```
 
 ### Test Coverage
