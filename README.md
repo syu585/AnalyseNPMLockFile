@@ -109,7 +109,7 @@ python3 analyze_bun_lock.py package-lock.json --date 2024-06-01 --output results
 
 - `lock_file` (required): Path to lock file (supports: bun.lock, package-lock.json, yarn.lock, pnpm-lock.yaml, deno.lock)
 - `--format`: Lock file format - `bun`, `npm`, `yarn`, `pnpm`, `deno`, or `auto` (default: auto-detect)
-- `--date`: Cutoff date in ISO 8601 format (default: 2024-01-01)
+- `--date` (required): Cutoff date in ISO 8601 format (e.g., 2024-01-01)
 - `--output`: Optional output file path for JSON results
 - `--verbose`: Show progress messages during execution
 - `--workers`: Number of concurrent workers for fetching package data (default: 10)

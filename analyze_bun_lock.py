@@ -480,7 +480,7 @@ def main():
     )
     parser.add_argument(
         '--date',
-        default='2024-01-01',
+        required=True,
         help='Cutoff date in ISO 8601 format (e.g., 2024-01-01). Packages released after this date will be listed.'
     )
     parser.add_argument(
