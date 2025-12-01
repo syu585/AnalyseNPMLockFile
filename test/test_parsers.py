@@ -14,7 +14,7 @@ import tempfile
 # Add parent directory to path to import the module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from analyze_bun_lock import (
+from analyze_lock import (
     detect_lock_file_format,
     parse_bun_lock,
     parse_npm_lock,

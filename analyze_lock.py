@@ -2,6 +2,7 @@
 """
 Script to analyze lock files from various package managers:
 - Supports: bun.lock, package-lock.json (npm), yarn.lock, pnpm-lock.yaml, deno.lock
+- Can analyze a single lock file or recursively find and analyze all lock files in a directory
 - Extract all packages with their versions
 - Query release time for each version using npm registry API
 - Find packages released after a specific date
@@ -17,6 +18,44 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from urllib.parse import quote
+
+
+def find_lock_files(directory: str) -> List[Tuple[str, str]]:
+    """
+    Recursively find all lock files in a directory.
+    
+    Args:
+        directory: Path to the directory to search
+        
+    Returns:
+        List of (file_path, format_type) tuples
+    """
+    lock_file_patterns = {
+        'bun.lock': 'bun',
+        'bun.lockb': 'bun',
+        'package-lock.json': 'npm',
+        'yarn.lock': 'yarn',
+        'pnpm-lock.yaml': 'pnpm',
+        'deno.lock': 'deno',
+    }
+    
+    found_files = []
+    directory_path = Path(directory)
+    
+    if not directory_path.exists():
+        print(f"Error: Directory '{directory}' does not exist", file=sys.stderr)
+        return []
+    
+    if not directory_path.is_dir():
+        print(f"Error: '{directory}' is not a directory", file=sys.stderr)
+        return []
+    
+    # Recursively search for lock files
+    for pattern, format_type in lock_file_patterns.items():
+        for file_path in directory_path.rglob(pattern):
+            found_files.append((str(file_path), format_type))
+    
+    return found_files
 
 
 def detect_lock_file_format(lock_file_path: str) -> str:
@@ -470,14 +509,14 @@ def main():
         description='Analyze lock files from various package managers and find packages released after a specific date'
     )
     parser.add_argument(
-        'lock_file',
-        help='Path to lock file (bun.lock, package-lock.json, yarn.lock, pnpm-lock.yaml, deno.lock)'
+        'path',
+        help='Path to lock file or directory containing lock files. If directory, will recursively search for all supported lock files.'
     )
     parser.add_argument(
         '--format',
         choices=['bun', 'npm', 'yarn', 'pnpm', 'deno', 'auto'],
         default='auto',
-        help='Lock file format (default: auto-detect)'
+        help='Lock file format (default: auto-detect). Only applicable when path is a single file.'
     )
     parser.add_argument(
         '--date',
@@ -502,26 +541,82 @@ def main():
     
     args = parser.parse_args()
     
-    # Determine format
-    format_type = None if args.format == 'auto' else args.format
+    path = Path(args.path)
     
-    # Parse lock file
+    # Check if path is a file or directory
+    if path.is_file():
+        # Single file mode
+        lock_files = [(str(path), None if args.format == 'auto' else args.format)]
+        if args.verbose:
+            print(f"Processing single lock file: {args.path}", file=sys.stderr)
+    elif path.is_dir():
+        # Directory mode - find all lock files recursively
+        if args.verbose:
+            print(f"Searching for lock files in directory: {args.path}", file=sys.stderr)
+        
+        lock_files = find_lock_files(args.path)
+        
+        if not lock_files:
+            print(f"No lock files found in directory: {args.path}", file=sys.stderr)
+            sys.exit(1)
+        
+        if args.verbose:
+            print(f"Found {len(lock_files)} lock file(s):", file=sys.stderr)
+            for file_path, format_type in lock_files:
+                print(f"  - {file_path} ({format_type})", file=sys.stderr)
+    else:
+        print(f"Error: Path '{args.path}' does not exist or is not accessible", file=sys.stderr)
+        sys.exit(1)
+    
+    # Process all lock files
+    all_packages = []
+    all_packages_set = set()  # To avoid duplicates across files
+    lock_files_processed = []
+    
+    for lock_file_path, format_type in lock_files:
+        if args.verbose:
+            print(f"\nParsing {lock_file_path}...", file=sys.stderr)
+        
+        try:
+            packages = parse_lock_file(lock_file_path, format_type)
+            
+            if args.verbose:
+                detected_format = format_type or detect_lock_file_format(lock_file_path)
+                print(f"  Format: {detected_format}", file=sys.stderr)
+                print(f"  Found {len(packages)} packages", file=sys.stderr)
+            
+            # Add unique packages to the collection
+            new_packages = 0
+            for pkg in packages:
+                pkg_key = (pkg[0], pkg[1])  # (name, version) tuple
+                if pkg_key not in all_packages_set:
+                    all_packages.append(pkg)
+                    all_packages_set.add(pkg_key)
+                    new_packages += 1
+            
+            if args.verbose and len(lock_files) > 1:
+                print(f"  Added {new_packages} unique packages", file=sys.stderr)
+            
+            lock_files_processed.append({
+                'path': lock_file_path,
+                'format': format_type or detect_lock_file_format(lock_file_path),
+                'packages_count': len(packages)
+            })
+            
+        except Exception as e:
+            print(f"Error processing {lock_file_path}: {e}", file=sys.stderr)
+            continue
+    
+    if not all_packages:
+        print("No packages found in any lock files", file=sys.stderr)
+        sys.exit(1)
+    
     if args.verbose:
-        if format_type:
-            print(f"Parsing {args.lock_file} as {format_type} format...", file=sys.stderr)
-        else:
-            print(f"Parsing {args.lock_file} (auto-detecting format)...", file=sys.stderr)
-    
-    packages = parse_lock_file(args.lock_file, format_type)
-    
-    if args.verbose:
-        detected_format = format_type or detect_lock_file_format(args.lock_file)
-        print(f"Format: {detected_format}", file=sys.stderr)
-        print(f"Found {len(packages)} packages", file=sys.stderr)
+        print(f"\nTotal unique packages across all files: {len(all_packages)}", file=sys.stderr)
     
     # Get release dates for all packages concurrently
     packages_with_dates = fetch_release_dates_concurrent(
-        packages, 
+        all_packages, 
         max_workers=args.workers, 
         verbose=args.verbose
     )
@@ -538,7 +633,8 @@ def main():
     # Prepare output
     output_data = {
         'cutoff_date': args.date,
-        'total_packages': len(packages),
+        'lock_files_processed': lock_files_processed,
+        'total_packages': len(all_packages),
         'packages_after_date': len(filtered_packages),
         'packages': filtered_packages
     }
@@ -555,7 +651,8 @@ def main():
     # Print summary
     if args.verbose:
         print(f"\nSummary:", file=sys.stderr)
-        print(f"Total packages: {len(packages)}", file=sys.stderr)
+        print(f"Lock files processed: {len(lock_files_processed)}", file=sys.stderr)
+        print(f"Total unique packages: {len(all_packages)}", file=sys.stderr)
         print(f"Packages released after {args.date}: {len(filtered_packages)}", file=sys.stderr)
 
 

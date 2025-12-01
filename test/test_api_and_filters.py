@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 # Add parent directory to path to import the module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from analyze_bun_lock import (
+from analyze_lock import (
     get_package_release_date,
     fetch_release_dates_concurrent,
     filter_packages_after_date
@@ -22,7 +22,7 @@ from analyze_bun_lock import (
 class TestGetPackageReleaseDate(unittest.TestCase):
     """Test package release date fetching from npm registry."""
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_success(self, mock_get):
         """Test successful package release date fetch."""
         mock_response = Mock()
@@ -41,7 +41,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         self.assertEqual(result['version'], '18.2.0')
         self.assertEqual(result['release_date'], '2022-06-14T15:30:00.000Z')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_scoped_package(self, mock_get):
         """Test fetching release date for scoped package."""
         mock_response = Mock()
@@ -64,7 +64,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         call_args = mock_get.call_args[0][0]
         self.assertIn('@babel/core', call_args)
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_not_found(self, mock_get):
         """Test handling when version is not found."""
         mock_response = Mock()
@@ -80,7 +80,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Unknown')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_network_error(self, mock_get):
         """Test handling network errors."""
         mock_get.side_effect = Exception('Network error')
@@ -89,7 +89,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Error')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_timeout(self, mock_get):
         """Test handling timeout errors."""
         import requests
@@ -99,7 +99,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Error')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_verbose(self, mock_get):
         """Test verbose output."""
         mock_response = Mock()
@@ -116,7 +116,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], '2022-06-14T15:30:00.000Z')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_http_404(self, mock_get):
         """Test handling 404 errors for non-existent packages."""
         import requests
@@ -129,7 +129,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Error')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_http_500(self, mock_get):
         """Test handling server errors."""
         import requests
@@ -142,7 +142,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Error')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_connection_error(self, mock_get):
         """Test handling connection errors."""
         import requests
@@ -152,7 +152,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Error')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_json_decode_error(self, mock_get):
         """Test handling invalid JSON responses."""
         mock_response = Mock()
@@ -164,7 +164,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
         
         self.assertEqual(result['release_date'], 'Error')
     
-    @patch('analyze_bun_lock.requests.get')
+    @patch('analyze_lock.requests.get')
     def test_get_package_release_date_missing_time_field(self, mock_get):
         """Test handling responses without time field."""
         mock_response = Mock()
@@ -184,7 +184,7 @@ class TestGetPackageReleaseDate(unittest.TestCase):
 class TestFetchReleaseDatesConcurrent(unittest.TestCase):
     """Test concurrent package release date fetching."""
     
-    @patch('analyze_bun_lock.get_package_release_date')
+    @patch('analyze_lock.get_package_release_date')
     def test_fetch_release_dates_concurrent_basic(self, mock_get_date):
         """Test basic concurrent fetching."""
         mock_get_date.return_value = {
@@ -203,7 +203,7 @@ class TestFetchReleaseDatesConcurrent(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertEqual(mock_get_date.call_count, 2)
     
-    @patch('analyze_bun_lock.get_package_release_date')
+    @patch('analyze_lock.get_package_release_date')
     def test_fetch_release_dates_concurrent_empty(self, mock_get_date):
         """Test with empty package list."""
         packages = []
@@ -213,7 +213,7 @@ class TestFetchReleaseDatesConcurrent(unittest.TestCase):
         self.assertEqual(len(results), 0)
         mock_get_date.assert_not_called()
     
-    @patch('analyze_bun_lock.get_package_release_date')
+    @patch('analyze_lock.get_package_release_date')
     def test_fetch_release_dates_concurrent_error_handling(self, mock_get_date):
         """Test error handling in concurrent fetching."""
         def side_effect(*args, **kwargs):
